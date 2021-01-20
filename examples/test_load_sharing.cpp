@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "load_sharing.hpp"
+#include "../load_sharing.hpp"
 
 int main(int argc, char** argv) {
   int rank_all, err = 0;
@@ -18,17 +18,17 @@ int main(int argc, char** argv) {
     printf("node %d/%d(global) %d/%d(local)\n", i + 1, j, k + 1, r);
     return 0;
   },
-  OMPI_COMM_TYPE_HWTHREAD
+  OMPI_COMM_TYPE_CORE
   );
 
   mpi::benchmark::benchmark_size *= 100;
 
   mpi::cpu_share(1, mpi::utils::none_mem_update,
   [](int i, int j, int k, int r) {
-    printf("cpu-only benchmark : %d/%d(global) %f iters/ms\n", i + 1, j, mpi::benchmark::single_thread_benchmark());
+    printf("cpu-only benchmark: %d/%d(global) %f iters/ms\n", i + 1, j, mpi::benchmark::single_thread_benchmark());
     return 0;
   },
-  OMPI_COMM_TYPE_HWTHREAD
+  OMPI_COMM_TYPE_CORE
   );
 
 #ifdef _OPENMP
@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     printf("hybrid benchmark (gpu): %d/%d(global) %f iters/ms\n", i + 1, j, mpi::benchmark::single_gpu_benchmark());
     return 0;
   },
-  OMPI_COMM_TYPE_HWTHREAD
+  OMPI_COMM_TYPE_CORE
   );
 #endif
 

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "assignment.hpp"
+#include "../assignment.hpp"
 
 int main(int argc, char** argv) {
     // Initialisation
@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
         printf ("\n");
       }
     }
-    
+
     // Finalisation
     return MPI_Finalize();
 }

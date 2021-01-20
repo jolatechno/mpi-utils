@@ -219,5 +219,5 @@ namespace mpi {
   int gpu_share(int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int)) {
     return gpu_share(1, mem_update, gpu_compute);
   }
-#endif
 }
+#endif
