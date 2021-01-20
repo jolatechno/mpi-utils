@@ -80,6 +80,8 @@ You might prefer implementing your own __OPENMP__ send and receive function for 
 
 ### load sharing
 
+#### classes
+
 #### available functions
 
 To use the automated load-sharing functions provided by this repository, you need to import the [load_sharing.hpp](./load_sharing.hpp) file.

@@ -9,23 +9,87 @@ namespace mpi {
   bool enable_barrier = false;
 
 
+
+  /*
+  classes
+  */
+
+
+  class devices {
+  public:
+    int num_device = 0;
+    int *devices;
+  };
+
+  class topology {
+  public:
+    int num_node = 0;
+    int my_rank;
+    int *rank_all;
+    int *size_sm;
+    int *num_device;
+  };
+
+
   /*
   utils functions
   */
 
 
   namespace utils {
-    int none_mem_update(int, int, int) {
+    int none_compute(const int, const int, const int, const int) {
       return 0;
-    };
+    }
 
-    int none_compute(int, int, int, int) {
-      return 0;
-    };
+    devices none_list_devices() {
+      devices dev;
+      return dev;
+    }
 
-    int* none_list_devices() {
-      int *list = (int*)calloc(1, sizeof(int));
-      return list;
+    topology get_global_topology(const int my_rank_sm, const int size_sm, const int num_device) {
+      topology topo;
+
+      /* read global size */
+      int my_rank_all, size_all;
+      MPI_Comm_rank (MPI_COMM_WORLD, &my_rank_all);
+      MPI_Comm_size (MPI_COMM_WORLD, &size_all);
+
+      /* get a simple topology list */
+      int* global_topology = (int* )malloc(3 * size_all * sizeof(int));
+      global_topology[3*my_rank_all] = my_rank_sm;
+      global_topology[3*my_rank_all + 1] = size_sm - num_device;
+      global_topology[3*my_rank_all + 2] = num_device;
+      MPI_Allgather(&global_topology[3*my_rank_all], 3, MPI_INT, global_topology, 3, MPI_INT, MPI_COMM_WORLD);
+
+      if (my_rank_sm == 0) {
+        /* get the number of shared node */
+        int node_size = 0;
+        for (int i = 0; i < size_all; i++)
+          if (global_topology[3*i] == 0)
+            node_size++;
+
+        topo.num_node = node_size;
+
+        /* get the actual topology */
+        topo.rank_all = (int* )malloc(node_size * sizeof(int));
+        topo.size_sm = (int* )malloc(node_size * sizeof(int));
+        topo.num_device = (int* )malloc((node_size--) * sizeof(int));
+        for (int i = size_all - 1; i >= 0 ; i--)
+          if (global_topology[3*i] == 0) {
+            if (i == my_rank_all)
+              topo.my_rank = node_size;
+
+            topo.rank_all[node_size] = i;
+            topo.size_sm[node_size] = global_topology[3*i + 1];
+            topo.num_device[node_size] = global_topology[3*i + 2];
+            if (node_size-- == 0)
+              break;
+          }
+      }
+
+      /* freeing and return */
+      free(global_topology);
+      return topo;
     }
   }
 
@@ -64,7 +128,7 @@ namespace mpi {
   */
 
 
-  int cpu_gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int), int split_type) {
+  int cpu_gpu_share(int n_iter, devices (*list_devices)(), int (*mem_update)(const topology&), int (*cpu_compute)(const int, const int, const int, const int), int (*gpu_compute)(const int, const int, const int, const int), int split_type) {
     int err;
 
     /* initialize variables */
@@ -79,23 +143,15 @@ namespace mpi {
     MPI_Comm_rank (comm_sm, &my_rank_sm);
     MPI_Comm_size (comm_sm, &size_sm);
 
-    /* list device */
-    int *devices = (*list_devices)();
-    int num_device = *(devices++);
+    /* get cpu topology */
+    devices device = (*list_devices)();
+    topology topo = utils::get_global_topology(my_rank_sm, size_sm, device.num_device);
 
     for (int i = 0; i < n_iter; i++) {
       /* update memory */
       if (my_rank_sm == 0) {
         /* gpu memory */
-        err = (*mem_update_gpu)(my_rank_all, size_all, num_device);
-
-        /* error handling */
-        /* only on the first thread for now */
-        if (err != 0)
-          return err;
-
-        /* cpu memory */
-        err = (*mem_update_cpu)(my_rank_all, size_all, size_sm - num_device);
+        err = (*mem_update)(topo);
 
         /* error handling */
         /* only on the first thread for now */
@@ -103,9 +159,9 @@ namespace mpi {
           return err;
       }
 
-      if (my_rank_sm < num_device) {
+      if (my_rank_sm < device.num_device) {
         /* gpu compute */
-        err = (*gpu_compute)(my_rank_all, size_all, devices[my_rank_sm], num_device);
+        err = (*gpu_compute)(my_rank_all, size_all, device.devices[my_rank_sm], device.num_device);
 
         /* error handling */
         /* only on the current thread for now */
@@ -113,7 +169,7 @@ namespace mpi {
           return err;
       } else {
         /* cpu compute */
-        err = (*cpu_compute)(my_rank_all, size_all, my_rank_sm - num_device, size_sm - num_device);
+        err = (*cpu_compute)(my_rank_all, size_all, my_rank_sm - device.num_device, size_sm - device.num_device);
 
         /* error handling */
         /* only on the current thread for now */
@@ -128,6 +184,15 @@ namespace mpi {
       }
     }
 
+    if (device.num_device != 0)
+      free(device.devices);
+
+    if (my_rank_sm == 0) {
+      free(topo.rank_all);
+      free(topo.size_sm);
+      free(topo.num_device);
+    }
+
     return 0;
   }
 
@@ -137,15 +202,15 @@ namespace mpi {
   */
 
 
-  int cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int), int split_type) {
-    return cpu_gpu_share(n_iter, &utils::none_list_devices, mem_update, &utils::none_mem_update, compute, &utils::none_compute, split_type);
+  int cpu_share(int n_iter, int (*mem_update)(const topology&), int (*compute)(const int, const int, const int, const int), int split_type) {
+    return cpu_gpu_share(n_iter, &utils::none_list_devices, mem_update, compute, &utils::none_compute, split_type);
   }
 
-  int cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int)) {
+  int cpu_share(int n_iter, int (*mem_update)(const topology&), int (*compute)(const int, const int, const int, const int)) {
     return cpu_share(n_iter, mem_update, compute, MPI_COMM_TYPE_SHARED);
   }
 
-  int cpu_share(int (*mem_update)(int, int, int), int (*compute)(int, int, int, int)) {
+  int cpu_share(int (*mem_update)(const topology&), int (*compute)(const int, const int, const int, const int)) {
     return cpu_share(1, mem_update, compute);
   }
 
@@ -155,8 +220,8 @@ namespace mpi {
   */
 
 
-  int gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_gpu)(int, int, int), int (*gpu_compute)(int, int, int, int), int split_type) {
-    return cpu_gpu_share(n_iter, &utils::none_list_devices, &utils::none_mem_update, mem_update_gpu, &utils::none_compute, gpu_compute, split_type);
+  int gpu_share(int n_iter, devices (*list_devices)(), int (*mem_update)(const topology&), int (*gpu_compute)(const int, const int, const int, const int), int split_type) {
+    return cpu_gpu_share(n_iter, &utils::none_list_devices, mem_update, &utils::none_compute, gpu_compute, split_type);
   }
 }
 
@@ -168,17 +233,16 @@ namespace mpi {
 namespace mpi {
   /* utils functions using openmp */
   namespace utils {
-    int* omp_target_list() {
+    devices omp_target_list() {
+      devices dev;
       /* read device numbr */
-      const int num_device = omp_get_num_devices();
+      dev.num_device = omp_get_num_devices();
+      dev.devices = (int*)malloc(dev.num_device * sizeof(int));
 
-      int *devices = (int*)malloc((num_device + 1) * sizeof(int));
+      for (int i = 0; i < dev.num_device; i++)
+        dev.devices[i + 1] = i;
 
-      devices[0] = num_device;
-      for (int i = 0; i < num_device; i++)
-        devices[i + 1] = i;
-
-      return devices;
+      return dev;
     }
   }
 
@@ -204,19 +268,19 @@ namespace mpi {
   */
 
 
-  int cpu_gpu_share(int n_iter, int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int)) {
-    return mpi::cpu_gpu_share(n_iter, &utils::omp_target_list, mem_update_cpu, mem_update_gpu, cpu_compute, gpu_compute, MPI_COMM_TYPE_SHARED);
+  int cpu_gpu_share(int n_iter, int (*mem_update)(const topology&), int (*cpu_compute)(const int, const int, const int, const int), int (*gpu_compute)(const int, const int, const int, const int)) {
+    return mpi::cpu_gpu_share(n_iter, &utils::omp_target_list, mem_update, cpu_compute, gpu_compute, MPI_COMM_TYPE_SHARED);
   }
 
-  int cpu_gpu_share(int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int)) {
-    return mpi::cpu_gpu_share(1, mem_update_cpu, mem_update_gpu, cpu_compute, gpu_compute);
+  int cpu_gpu_share(int (*mem_update)(const topology&), int (*cpu_compute)(const int, const int, const int, const int), int (*gpu_compute)(const int, const int, const int, const int)) {
+    return mpi::cpu_gpu_share(1, mem_update, cpu_compute, gpu_compute);
   }
 
-  int gpu_share(int n_iter, int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int)) {
+  int gpu_share(int n_iter, int (*mem_update)(const topology&), int (*gpu_compute)(const int, const int, const int, const int)) {
     return gpu_share(n_iter, &utils::omp_target_list, mem_update, gpu_compute, MPI_COMM_TYPE_SHARED);
   }
 
-  int gpu_share(int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int)) {
+  int gpu_share(int (*mem_update)(const topology&), int (*gpu_compute)(const int, const int, const int, const int)) {
     return gpu_share(1, mem_update, gpu_compute);
   }
 }
