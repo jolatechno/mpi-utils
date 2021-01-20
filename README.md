@@ -6,62 +6,97 @@ The [assignment.hpp](./assignment.hpp) file contains function to send blocks of 
 
 ## Compilation
 
-To compile this example, you can use `mpic++ test.cpp assignment.hpp` and to run it you can use `mpirun a.out`.
+To compile this example, you can use `mpic++` and to run it using `mpirun`.
 
 ## Usage
 
-You can see an example code in the [test.cpp](./test.cpp) file, that is explained bellow:
+### assignment
+
+To use the send and receive function provided by this directory, you need to import the [assignment.hpp](./assignment.hpp) file.
+
+You can see an example code in the [test_assignment.cpp](./test_assignment.cpp) file, that is explained bellow:
 
 ```cpp
-#include <mpi.h>
-
-#include "assignment.hpp"
-
-int main(int argc, char** argv) {
-    // Initialisation
-    int err = MPI_Init(&argc, &argv); if (err != 0) return err;
-
-    // Reading size and rank
-    int size, rank;
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+// Initialisation
+int err = MPI_Init(&argc, &argv); if (err != 0) return err;
 ```
 
 We just iniatized the MPI comm, returning an error if it fails.
 
 ```cpp
-  //testing
-  double mat[3][5][5];
-  int sizes[3] = {3, 5, 5};
-  int length[3] = {2, 4, 3}; //length of the block to copy
+//testing
+double mat[3][5][5];
+int sizes[3] = {3, 5, 5};
+int length[3] = {2, 4, 3}; //length of the block to copy
 ```
 
 We know create a new 3d array, and define its size and the length of the block to copy.
 
 ```cpp
-  if (rank == 0) {
+if (rank == 0) {
 
-    //initializing matrix
-    for (int k = 0; k < 3; k++)
-      for (int i = 0; i < 5; i++)
-        for (int j = 0; j < 5; j++)
-          mat[k][i][j] = (double)k + (double)i/10 + (double)j/100;
+  //initializing matrix
+  for (int k = 0; k < 3; k++)
+    for (int i = 0; i < 5; i++)
+      for (int j = 0; j < 5; j++)
+        mat[k][i][j] = (double)k + (double)i/10 + (double)j/100;
+
+  //print the matrix
+  //send it
+}
 ```
 
-We know fill it with recognizable values, and print it :
+We know fill it with recognizable values (see [Results](#results)), and print it.
+
+We now decide the starting point of the block that will be sent, and send it to the other node :
 
 ```cpp
-    //printing matrix
-    for (int k = 0; k < 3; k++) {
-      for (int i = 0; i < 5; i++) {
-        for (int j = 0; j < 5; j++)
-          printf("%6.2f   ", mat[k][i][j]);
-        printf ("\n");
-      }
-      printf ("\n");
-    }
-    printf ("\n--------\n\n\n");
+  //sending matrix
+  int start[3] = {0, 0, 2};
+
+  err = mpi::send(1, sizes, start, length, &mat[0][0][0]); if (err != 0) return err;
 ```
+
+And we decide where the block will be received, and receive it from the other node :
+
+```cpp
+if (rank == 1) {
+  //receving matrix
+  int start[3] = {1, 1, 0};
+
+  err = mpi::receive(0, sizes, start, length, &mat[0][0][0]); if (err != 0) return err;
+
+  //print the matrix
+}
+```
+
+We then print it and finalize the MPI comm.
+
+We can see that the program worked as intended (see [Results](#results)), exiting without errors, and copying a block of the right size, with the right starting point both at the receiving end and at the sending end.
+
+#### CUDA (and gpu) aware
+
+You can send directly to a __CUDA__ device (leveraging cuda-aware __MPI__) by using the same function with a `cuda_` prefix beforehand.
+
+You can also send to any __OPENMP__ device by using the same function with a `omp_` prefix.
+
+You might prefer implementing your own __OPENMP__ send and receive function for more spetial workcase as those provided by this repository allocate and free cpu buffer as intermediary.
+
+- [ ] TODO
+
+### load sharing
+
+To use the automated load-sharing functions provided by this directory, you need to import the [load_sharing.hpp](./load_sharing.hpp) file.
+
+You can see an example code in the [test_load_sharing.cpp](./test_load_sharing.cpp) file, that is explained bellow:
+
+- [ ] TODO
+
+# Results
+
+### assignment
+
+The first matrix print returned :
 
 ```shell
   0.00     0.01     0.02     0.03     0.04   
@@ -83,44 +118,7 @@ We know fill it with recognizable values, and print it :
   2.40     2.41     2.42     2.43     2.44
 ```
 
-We now decide the starting point of the block that will be sent, and send it to the other node :
-
-```cpp
-    //sending matrix
-    int start[3] = {0, 0, 2};
-
-    err = mpi::send(1, sizes, start, length, &mat[0][0][0]); if (err != 0) return err;
-```
-
-And we decide where the block will be received, and receive it from the other node :
-
-```cpp
-  } else if (rank == 1) {
-
-    //receving matrix
-    int start[3] = {1, 1, 0};
-
-    err = mpi::receive(0, sizes, start, length, &mat[0][0][0]); if (err != 0) return err;
-```
-
-We then print it and finalize the MPI comm.
-
-```cpp
-    //printing matrix
-    for (int k = 0; k < 3; k++) {
-      for (int i = 0; i < 5; i++) {
-        for (int j = 0; j < 5; j++)
-          printf("%6.2f   ", mat[k][i][j]);
-        printf ("\n");
-      }
-      printf ("\n");
-    }
-  }
-
-  // Finalisation
-  return MPI_Finalize();
-}
-```
+And the second print returned :
 
 ```shell
   0.00     0.00     0.00     0.00     0.00   
@@ -142,4 +140,4 @@ We then print it and finalize the MPI comm.
   1.32     1.33     1.34     0.00     0.00
 ```
 
-We can see that the program worked as intended, exiting without errors, and copying a block of the right size, with the right starting point both at the receiving end and at the sending end.
+### load sharing
