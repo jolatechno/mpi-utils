@@ -13,6 +13,21 @@ namespace mpi {
 
   namespace {
     template<typename T>
+    int repeat_product(int (*send_recv)(int, int, int, int, T*), int dev, int to_from, int num_dim, int sizes[], int start[], int length[], T *arr, int prod) {
+      int err, i;
+      if (num_dim == 1) return send_recv(dev, to_from, start[0], length[0], arr);
+
+      int next_prod = prod / sizes[1];
+
+      for (i = start[0]; i < start[0] + length[0]; i++) {
+        err = repeat_product(send_recv, dev, to_from, num_dim - 1, sizes + 1, start + 1, length + 1, arr + prod*i, next_prod);
+        if (err = 0) return err;
+      }
+
+      return 0;
+    }
+
+    template<typename T>
     int repeat_product(int (*send_recv)(int, int, int, T*), int to_from, int num_dim, int sizes[], int start[], int length[], T *arr, int prod) {
       int err, i;
       if (num_dim == 1) return send_recv(to_from, start[0], length[0], arr);
@@ -25,6 +40,16 @@ namespace mpi {
       }
 
       return 0;
+    }
+
+    template<typename T>
+    int repeat_no_product(int (*send_recv)(int, int, int, int, T*), int dev, int to_from, int num_dim, int sizes[], int start[], int length[], T *arr) {
+      if (num_dim == 1) return send_recv(dev, to_from, start[0], length[0], arr);
+
+      int prod = sizes[1];
+      for (int i = 2; i < num_dim; i++) prod *= sizes[i];
+
+      return repeat_product(send_recv, dev, to_from, num_dim, sizes, start, length, arr, prod);
     }
 
     template<typename T>
@@ -118,8 +143,8 @@ namespace mpi {
   }
 
   template<typename T, size_t NDIM>
-  int omp_send(int to, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr) {
-    return repeat_no_product(omp_send, to, NDIM, sizes, start, length, arr);
+  int omp_send(int dev, int to, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr) {
+    return repeat_no_product(&omp_send, dev, to, NDIM, sizes, start, length, arr);
   }
 
 
@@ -150,8 +175,8 @@ namespace mpi {
   }
 
   template<typename T, size_t NDIM>
-  int omp_receive(int from, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr) {
-    return repeat_no_product(omp_receive, from, NDIM, sizes, start, length, arr);
+  int omp_receive(int dev, int from, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr) {
+    return repeat_no_product(&omp_receive, dev, from, NDIM, sizes, start, length, arr);
   }
 }
 #endif

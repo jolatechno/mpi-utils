@@ -1,14 +1,14 @@
 # mpi-utils
 
-This is a simple repo containing header file that provide utility functions for MPI that I use in my HPC projects.
+This is a simple repository containing header file that provide utility functions for __MPI__ that I use in my HPC projects.
 
-The [assignment.hpp](./assignment.hpp) file contains function to send blocks of multi-dimensional arrays, with varying sizes, and with the receiving indexes able to be different from the receiving indexes. This is perfect for simulations, where a fractured space can have different indexes on different nodes.
+The [assignment.hpp](./assignment.hpp) file contains functions made to send blocks of multi-dimensional arrays, with varying sizes, and with the offsets (in each dimensions) from the sending node able to be different from the offsets of the receiving node. This is perfect for simulations, where a fractured space can have different indexes on different nodes.
 
-The [load_sharing.hpp](./load_sharing.hpp) file contains function made to enable automatic load-sharing using a hybrid __MPI__ model (__MPI__ nodes with shared memory), supporting cpu-only function, gpu-only and cpu/gpu hybrid functions.
+The [load_sharing.hpp](./load_sharing.hpp) file contains functions made to enable automatic load-sharing using a hybrid __MPI__ model (__MPI__ nodes with shared memory), supporting cpu-only functions, gpu-only and cpu/gpu hybrid functions.
 
 ## Compilation
 
-To compile this example, you can use `mpic++` and to run it using `mpirun`.
+You can use `mpic++` to compile the provided [examples](./examples), and to run them using `mpirun`.
 
 ## Usage
 
@@ -16,24 +16,24 @@ To compile this example, you can use `mpic++` and to run it using `mpirun`.
 
 #### available functions
 
-To use the send and receive function provided by this directory, you need to import the [assignment.hpp](./assignment.hpp) file.
+To use the send and receive functions provided by this repository, you need to import the [assignment.hpp](./assignment.hpp) file.
 
 ```cpp
-int send(int to, int start, int length, T *arr)
-int send(int to, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
-int receive(int from, int start, int length, T *arr)
-int receive(int from, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
+int mpi::send(int to, int start, int length, T *arr)
+int mpi::send(int to, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
+int mpi::receive(int from, int start, int length, T *arr)
+int mpi::receive(int from, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
 
 /* only if compiled with openmp */
-int omp_send(int dev, int to, int start, int length, T *arr)
-int omp_send(int to, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
-int omp_receive(int dev, int from, int start, int length, T *arr)
-int omp_receive(int from, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
+int mpi::omp_send(int dev, int to, int start, int length, T *arr)
+int mpi::omp_send(int dev, int to, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
+int mpi::omp_receive(int dev, int from, int start, int length, T *arr)
+int mpi::omp_receive(int dev, int from, int (&sizes)[NDIM], int (&start)[NDIM], int (&length)[NDIM], T *arr)
 ```
 
 #### example
 
-You can see an example code in the [examples/test_assignment.cpp](./examples/test_assignment.cpp) file, that is explained bellow:
+You can see an example code in the [examples/test_assignment.cpp](./examples/test_assignment.cpp) file, which is explained bellow:
 
 ```cpp
 //testing
@@ -42,20 +42,20 @@ int sizes[3] = {3, 5, 5};
 int length[3] = {2, 4, 3}; //length of the block to copy
 ```
 
-We know create a new 3d array, and define its size and the length of the block to copy.
+We first create a new 3d array, and define its size and the length of the block to copy.
 
 We then fill it with recognizable values (see [Results](#results)), and print it.
 
-We then decide the starting point of the block that will be sent, and send it to the other node :
+We then decide the offsets of the block that will be sent, and send it to the other node :
 
 ```cpp
-  //sending matrix
-  int start[3] = {0, 0, 2};
+//sending matrix
+int start[3] = {0, 0, 2};
 
-  err = mpi::send(1, sizes, start, length, &mat[0][0][0]); if (err != 0) return err;
+err = mpi::send(1, sizes, start, length, &mat[0][0][0]); if (err != 0) return err;
 ```
 
-And we decide where the block will be received, and receive it from the other node :
+And we decide the offsets at which the block will be received, and receive it from the other node :
 
 ```cpp
 if (rank == 1) {
@@ -68,9 +68,7 @@ if (rank == 1) {
 }
 ```
 
-We then print it and finalize the MPI comm.
-
-We can see that the program worked as intended (see [Results](#results)), exiting without errors, and copying a block of the right size, with the right starting point both at the receiving end and at the sending end.
+We can see that the program worked as intended (see [Results](#results)), copying a block of the right size, with the right offsets both at the receiving end and at the sending end.
 
 #### CUDA (and gpu) aware
 
@@ -84,31 +82,31 @@ You might prefer implementing your own __OPENMP__ send and receive function for 
 
 #### available functions
 
-To use the automated load-sharing functions provided by this directory, you need to import the [load_sharing.hpp](./load_sharing.hpp) file.
+To use the automated load-sharing functions provided by this repository, you need to import the [load_sharing.hpp](./load_sharing.hpp) file.
 
 ```cpp
-int cpu_gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int), int split_type)
-int cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int), int split_type)
-int cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int))
-int cpu_share(int (*mem_update)(int, int, int), int (*compute)(int, int, int, int))
-int gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_gpu)(int, int, int), int (*gpu_compute)(int, int, int, int), int split_type)
+int mpi::cpu_gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int), int split_type)
+int mpi::cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int), int split_type)
+int mpi::cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int))
+int mpi::cpu_share(int (*mem_update)(int, int, int), int (*compute)(int, int, int, int))
+int mpi::gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_gpu)(int, int, int), int (*gpu_compute)(int, int, int, int), int split_type)
 
-int utils::none_mem_update(int, int, int)
-int utils::none_compute(int, int, int, int)
-int* utils::none_list_devices()
+int mpi::utils::none_mem_update(int, int, int)
+int mpi::utils::none_compute(int, int, int, int)
+int* mpi::utils::none_list_devices()
 
-double benchmark::timeit(void (*func)())
-double benchmark::single_thread_benchmark()
+double mpi::benchmark::timeit(void (*func)())
+double mpi::benchmark::single_thread_benchmark()
 
 /* only if compiled with openmp */
-int cpu_gpu_share(int n_iter, int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int))
-int cpu_gpu_share(int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int))
-int gpu_share(int n_iter, int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int))
-int gpu_share(int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int))
+int mpi::cpu_gpu_share(int n_iter, int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int))
+int mpi::cpu_gpu_share(int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int))
+int mpi::gpu_share(int n_iter, int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int))
+int mpi::gpu_share(int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int))
 
-int* utils::omp_target_list()
+int* mpi::utils::omp_target_list()
 
-double benchmark::single_gpu_benchmark()
+double mpi::benchmark::single_gpu_benchmark()
 ```
 
 Functions pointer passed as argument obey the following rules :
