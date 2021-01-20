@@ -6,7 +6,7 @@
 
 namespace mpi {
   /* enable barier */
-  bool enable_barier = false;
+  bool enable_barrier = false;
 
 
   /*
@@ -122,7 +122,7 @@ namespace mpi {
       }
 
       /* barier between iterations */
-      if (enable_barier) {
+      if (enable_barrier) {
         MPI_Barrier(comm_sm);
         MPI_Barrier(MPI_COMM_WORLD);
       }

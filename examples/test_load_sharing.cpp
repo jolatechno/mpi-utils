@@ -6,12 +6,10 @@
 #include "../load_sharing.hpp"
 
 int main(int argc, char** argv) {
-  int rank_all, err = 0;
   // Initialisation
-  err = MPI_Init(&argc, &argv); if (err != 0) return err;
-  MPI_Comm_rank (MPI_COMM_WORLD, &rank_all);
+  int err = MPI_Init(&argc, &argv); if (err != 0) return err;
 
-  mpi::enable_barier = true;
+  mpi::enable_barrier = true;
 
   mpi::cpu_share(1, mpi::utils::none_mem_update,
   [](int i, int j, int k, int r) {
