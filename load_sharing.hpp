@@ -21,7 +21,10 @@ namespace mpi {
 
   class topology {
   public:
-    int num_node = 0;
+    int num_node = 0; //number of nodes
+
+    MPI_Comm global_comm;
+    MPI_Comm comm_sm;
 
     int my_rank;
     int my_rank_sm;
@@ -47,6 +50,8 @@ namespace mpi {
 
   topology* get_global_topology(MPI_Comm global_comm, MPI_Comm comm_sm, devices *device) {
     topology* topo = new topology;
+    topo->global_comm = global_comm;
+    topo->comm_sm = comm_sm;
 
     /* read global and local size */
     int my_rank_all, size_all, size_sm;
@@ -62,31 +67,55 @@ namespace mpi {
     global_topology[3*my_rank_all + 2] = device->num_device;
     MPI_Allgather(&global_topology[3*my_rank_all], 3, MPI_INT, global_topology, 3, MPI_INT, MPI_COMM_WORLD);
 
-    //if (topo->my_rank_sm == 0) {
+    if (topo->my_rank_sm == 0) {
       /* get the number of shared node */
-      int node_size = 0;
       for (int i = 0; i < size_all; i++)
         if (global_topology[3*i] == 0)
-          node_size++;
-
-      topo->num_node = node_size;
+          topo->num_node++;
 
       /* get the actual topology */
-      topo->rank_all = (int* )malloc(node_size * sizeof(int));
-      topo->size_sm = (int* )malloc(node_size * sizeof(int));
-      topo->num_device = (int* )malloc((node_size--) * sizeof(int));
+      topo->rank_all = (int* )malloc(topo->num_node * sizeof(int));
+      topo->size_sm = (int* )malloc(topo->num_node * sizeof(int));
+      topo->num_device = (int* )malloc(topo->num_node * sizeof(int));
+
+      /* assign topology */
+      int node_size = 0;
       for (int i = size_all - 1; i >= 0 ; i--)
         if (global_topology[3*i] == 0) {
-          if (i == my_rank_all - topo->my_rank_sm)
+          if (i == my_rank_all)
             topo->my_rank = node_size;
 
           topo->rank_all[node_size] = i;
           topo->size_sm[node_size] = global_topology[3*i + 1];
           topo->num_device[node_size] = global_topology[3*i + 2];
-          if (node_size-- == 0)
+          if (++node_size == topo->num_node)
             break;
         }
-    //}
+
+      /* send it to other local nodes */
+      for (int rank_sm = 1; rank_sm < size_sm; rank_sm++) {
+        MPI_Send(&topo->num_node, 1, MPI_INT, rank_sm, 1, comm_sm);
+        MPI_Send(&topo->my_rank, 1, MPI_INT, rank_sm, 1, comm_sm);
+        MPI_Send(topo->rank_all, topo->num_node, MPI_INT, rank_sm, 1, comm_sm);
+        MPI_Send(topo->size_sm, topo->num_node, MPI_INT, rank_sm, 1, comm_sm);
+        MPI_Send(topo->num_device, topo->num_node, MPI_INT, rank_sm, 1, comm_sm);
+      }
+
+    } else {
+      /* receive */
+      MPI_Recv(&topo->num_node, 1, MPI_INT, 0, 1, comm_sm, MPI_STATUS_IGNORE);
+      MPI_Recv(&topo->my_rank, 1, MPI_INT, 0, 1, comm_sm, MPI_STATUS_IGNORE);
+
+      /* get the actual topology */
+      topo->rank_all = (int* )malloc(topo->num_node * sizeof(int));
+      topo->size_sm = (int* )malloc(topo->num_node * sizeof(int));
+      topo->num_device = (int* )malloc(topo->num_node * sizeof(int));
+
+      /* receive topology */
+      MPI_Recv(topo->rank_all, topo->num_node, MPI_INT, 0, 1, comm_sm, MPI_STATUS_IGNORE);
+      MPI_Recv(topo->size_sm, topo->num_node, MPI_INT, 0, 1, comm_sm, MPI_STATUS_IGNORE);
+      MPI_Recv(topo->num_device, topo->num_node, MPI_INT, 0, 1, comm_sm, MPI_STATUS_IGNORE);
+    }
 
     int zero_device_offset = std::max(0, size_sm - device->num_device);
     if(topo->my_rank_sm >= zero_device_offset) {
