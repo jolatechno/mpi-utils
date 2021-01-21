@@ -9,51 +9,47 @@ int main(int argc, char** argv) {
   // Initialisation
   int err = MPI_Init(&argc, &argv); if (err != 0) return err;
 
-  mpi::enable_barrier = true;
+  /* split communicator size */
+  MPI_Comm comm_sm;
+  MPI_Comm_split_type (MPI_COMM_WORLD, OMPI_COMM_TYPE_CORE, 0, MPI_INFO_NULL, &comm_sm);
 
-  mpi::cpu_share(1,
-  [](const mpi::topology& topo) {
-    printf("%d/%d(node), %d cpu and %d gpu\n", topo.my_rank + 1, topo.num_node, topo.size_sm[topo.my_rank], topo.num_device[topo.my_rank]);
-    return 0;
-  },
-  [](const int i, const int j, const int k, const int r) {
-    printf("node %d/%d(global) %d/%d(local)\n", i + 1, j, k + 1, r);
-    return 0;
-  },
-  OMPI_COMM_TYPE_CORE
-  );
+  mpi::devices* dev = new mpi::devices;
+  mpi::topology* topo = mpi::get_global_topology(MPI_COMM_WORLD, comm_sm, dev);
 
-  mpi::benchmark::benchmark_size *= 100;
+  MPI_Barrier(MPI_COMM_WORLD);
+  if ( topo->my_rank == 0 && topo->my_rank_sm == 0) printf("\n");
+  MPI_Barrier(MPI_COMM_WORLD);
 
-  mpi::cpu_share(1,
-  [](const mpi::topology& topo) {
-    //printf("%d/%d(node), %d cpu and %d gpu\n", topo.my_rank + 1, topo.num_node, topo.size_sm[topo.my_rank], topo.num_device[topo.my_rank]);
-    return 0;
-  },
-  [](const int i, const int j, const int k, const int r) {
-    printf("cpu-only benchmark: %d/%d(global) %f iters/ms\n", i + 1, j, mpi::benchmark::single_thread_benchmark());
-    return 0;
-  },
-  OMPI_COMM_TYPE_CORE
-  );
+  if(topo->my_rank_sm == 0)
+    printf("%d/%d(node), %d cpu and %d gpu\n", topo->my_rank + 1, topo->num_node, topo->size_sm[topo->my_rank], topo->num_device[topo->my_rank]);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  if ( topo->my_rank == 0 && topo->my_rank_sm == 0) printf("\n");
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  printf("%d/%d(node), %d/%d(local) %s\n", topo->my_rank + 1, topo->num_node, topo->my_rank_sm + 1, topo->size_sm[topo->my_rank], topo->is_device ? "gpu": "cpu");
 
 #ifdef _OPENMP
+  dev = mpi::utils::omp_target_list();
+  topo = mpi::get_global_topology(MPI_COMM_WORLD, comm_sm, dev);
 
-  mpi::cpu_gpu_share(1, mpi::utils::omp_target_list,
-  [](const mpi::topology& topo) {
-    printf("%d/%d(node), %d cpu and %d gpu\n", topo.my_rank + 1, topo.num_node, topo.size_sm[topo.my_rank], topo.num_device[topo.my_rank]);
-    return 0;
-  },
-  [](const int i, const int j, const int k, const int r) {
-    printf("hybrid benchmark (cpu): %d/%d(global) %f iters/ms\n", i + 1, j, mpi::benchmark::single_thread_benchmark());
-    return 0;
-  },
-  [](const int i, const int j, const int k, const int r) {
-    printf("hybrid benchmark (gpu): %d/%d(global) %f iters/ms\n", i + 1, j, mpi::benchmark::single_gpu_benchmark());
-    return 0;
-  },
-  OMPI_COMM_TYPE_CORE
-  );
+  MPI_Barrier(MPI_COMM_WORLD);
+  if ( topo->my_rank == 0 && topo->my_rank_sm == 0) printf("\n");
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  if(topo->my_rank_sm == 0)
+    printf("%d/%d(node), %d cpu and %d gpu\n", topo->my_rank + 1, topo->num_node, topo->size_sm[topo->my_rank], topo->num_device[topo->my_rank]);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  if ( topo->my_rank == 0 && topo->my_rank_sm == 0) printf("\n");
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  if(topo->is_device) {
+    printf("%d/%d(node), %d/%d(gpu)\n", topo->my_rank + 1, topo->num_node, topo->device, topo->num_device[topo->my_rank]);
+  } else {
+    printf("%d/%d(node), %d/%d(cpu)\n", topo->my_rank + 1, topo->num_node, topo->my_rank_sm + 1, topo->size_sm[topo->my_rank]);
+  }
+
 #endif
 
   // Finalisation
