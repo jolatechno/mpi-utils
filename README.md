@@ -4,8 +4,6 @@ This is a simple repository containing header file that provide utility function
 
 The [assignment.hpp](./assignment.hpp) file contains functions made to send blocks of multi-dimensional arrays, with varying sizes, and with the offsets (in each dimensions) from the sending node able to be different from the offsets of the receiving node. This is perfect for simulations, where a fractured space can have different indexes on different nodes.
 
-The [load_sharing.hpp](./load_sharing.hpp) file contains functions made to enable automatic load-sharing using a hybrid __MPI__ model (__MPI__ nodes with shared memory), supporting cpu-only functions, gpu-only and cpu/gpu hybrid functions.
-
 ## Compilation
 
 You can use `mpic++` to compile the provided [examples](./examples), and to run them using `mpirun`.
@@ -77,67 +75,6 @@ You can send directly to a __CUDA__ device (leveraging cuda-aware __MPI__) by us
 You can also send to any __OPENMP__ device by using the same function with a `omp_` prefix, and by adding as a first argument the `device_number` of the device from which to send or receive.
 
 You might prefer implementing your own __OPENMP__ send and receive function for more special workcases, as those provided by this repository allocate and free cpu buffers as intermediary.
-
-### load sharing
-
-#### classes
-
-#### available functions
-
-To use the automated load-sharing functions provided by this repository, you need to import the [load_sharing.hpp](./load_sharing.hpp) file.
-
-```cpp
-int mpi::cpu_gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int), int split_type)
-int mpi::cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int), int split_type)
-int mpi::cpu_share(int n_iter, int (*mem_update)(int, int, int), int (*compute)(int, int, int, int))
-int mpi::cpu_share(int (*mem_update)(int, int, int), int (*compute)(int, int, int, int))
-int mpi::gpu_share(int n_iter, int* (*list_devices)(), int (*mem_update_gpu)(int, int, int), int (*gpu_compute)(int, int, int, int), int split_type)
-
-int mpi::utils::none_mem_update(int, int, int)
-int mpi::utils::none_compute(int, int, int, int)
-int* mpi::utils::none_list_devices()
-
-double mpi::benchmark::timeit(void (*func)())
-double mpi::benchmark::single_thread_benchmark()
-
-/* only if compiled with openmp */
-int mpi::cpu_gpu_share(int n_iter, int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int))
-int mpi::cpu_gpu_share(int (*mem_update_cpu)(int, int, int), int (*mem_update_gpu)(int, int, int), int (*cpu_compute)(int, int, int, int), int (*gpu_compute)(int, int, int, int))
-int mpi::gpu_share(int n_iter, int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int))
-int mpi::gpu_share(int (*mem_update)(int, int, int), int (*gpu_compute)(int, int, int, int))
-
-int* mpi::utils::omp_target_list()
-
-double mpi::benchmark::single_gpu_benchmark()
-```
-
-Functions pointer passed as argument obey the following rules :
-
-```cpp
-int* list_devices()
-```
-
-A `list_devices` function is the function that list all device number (as defined by __OPENMP__ for example). It returns a list of `int`, with the first element being the number of device.
-
-```cpp
-int mem_update(int my_rank_all, int size_all, int num_device_or_thread)
-```
-
-A `mem_update` function is called by the node of local index 0 inside the local communicator, and takes as argument the global rank (`rank_all`) of the node, the size of the global communicator (`size_all`) and the number of local thread (`num_device_or_thread`) or of local devices for gpu.
-
-```cpp
-int compute(int my_rank_all, int size_all, int device_index_or_local_rank, int num_device_or_thread)
-```
-
-A `compute` function is called by each compute node (or each device), and takes as argument the global rank (`rank_all`) of the node, the size of the global communicator (`size_all`), the index inside the local communicator (`device_index_or_local_rank`) or of the device, and the number of local thread (`num_device_or_thread`) or of local devices for gpu.
-
-`mem_update` and `compute` are called in this order for each iterations.
-
-The `split_type` argument is passed to the [MPI_Comm_split_type](https://www.open-mpi.org/doc/v3.1/man3/MPI_Comm_split_type.3.php) functions which specify how the global communicator will be split.
-
-#### example
-
-You can see an example code in the [examples/test_load_sharing.cpp](./examples/test_load_sharing.cpp) file.
 
 # Results
 
